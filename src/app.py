@@ -1,4 +1,4 @@
-ssfrom flask import Flask, request, jsonify,render_template
+from flask import Flask, request, jsonify,render_template
 from flask.logging import create_logger
 import logging
 
