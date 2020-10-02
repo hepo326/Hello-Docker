@@ -22,7 +22,7 @@ pipeline {
         steps { 
             script { 
                 
-                if (env.BRANCH_NAME == 'development' || env.CHANGE_TARGET == 'development') {
+                if (env.BRANCH_NAME == 'Development' || env.CHANGE_TARGET == 'Development') {
                        env.DEPLOYMENT_TYPE = 'blue'
                  }
                 
