@@ -1,0 +1,159 @@
+Description: >
+    Moheb Badawy - Hello Docker /
+    Udacity-Capstone
+
+Parameters:
+
+    EnvironmentName:
+        Description: An environment name that will be prefixed to resource names
+        Type: String
+        
+Resources:
+
+  JenkinsSecGroup:
+    Type: AWS::EC2::SecurityGroup
+    Properties:
+      GroupDescription: Security group for Jenkins server
+      VpcId:
+        Fn::ImportValue: 
+          !Sub "${EnvironmentName}-MY-VPCID"
+     
+      SecurityGroupIngress:
+        - IpProtocol: tcp
+          FromPort: 8080
+          ToPort: 8080
+          CidrIp: 0.0.0.0/0
+        
+        - CidrIp: 0.0.0.0/0
+          IpProtocol: tcp
+          FromPort: 22
+          ToPort: 22
+     
+      Tags:
+        - Key: Name
+          Value: !Sub "${EnvironmentName} Jenkins Security Group"
+    
+  Jenkins:
+    Type: AWS::EC2::Instance
+    Properties:
+      ImageId: ami-06f2f779464715dc5
+      InstanceType: t3.medium
+      KeyName : jenkins-key
+      AvailabilityZone: !Select [ 0, !GetAZs '' ]
+      
+      SecurityGroupIds:
+        - Ref: JenkinsSecGroup
+      
+      SubnetId:
+        Fn::ImportValue: 
+          Fn::Sub: "${EnvironmentName}-MY-PUB-SN"
+
+      Tags:
+        - Key: Name
+          Value: !Sub ${EnvironmentName} Jenkins    
+      
+      UserData:
+        Fn::Base64:
+          !Sub |
+            #!/bin/bash
+            sudo apt update
+            sudo apt install openjdk-8-jdk -y
+            wget -q -O - https://pkg.jenkins.io/debian/jenkins.io.key | sudo apt-key add -
+            sudo sh -c 'echo deb http://pkg.jenkins.io/debian-stable binary/ > /etc/apt/sources.list.d/jenkins.list'
+            sudo apt update
+            sudo apt install jenkins -y
+            sudo systemctl start jenkins
+            sudo apt-get update
+            sudo apt install docker.io -y
+            sudo apt install tidy -y
+            curl -s https://packages.cloud.google.com/apt/doc/apt-key.gpg | sudo apt-key add -
+            echo "deb http://apt.kubernetes.io/ kubernetes-xenial main" | sudo tee -a /etc/apt/sources.list.d/kubernetes.list
+            sudo apt-get update
+            sudo apt-get install -y kubectl
+            sudo wget -O /bin/hadolint https://github.com/hadolint/hadolint/releases/download/v1.16.3/hadolint-Linux-x86_64
+
+
+  ClusterRole:
+      Type: AWS::IAM::Role
+      Properties:
+          AssumeRolePolicyDocument:
+              Version: "2012-10-17"
+              Statement:
+              -   Effect: "Allow"
+                  Principal:
+                      Service:
+                      -   "eks.amazonaws.com" 
+                  Action: 
+                  -   "sts:AssumeRole"
+          Tags:
+          -   Key: Name
+              Value: !Sub "${EnvironmentName}-Role"
+          Path: "/"
+          ManagedPolicyArns: [
+              "arn:aws:iam::aws:policy/AmazonEKSClusterPolicy",
+              "arn:aws:iam::aws:policy/AmazonEKSServicePolicy"
+          ]  
+
+  ClusterSecurityGroup:
+      Type: AWS::EC2::SecurityGroup
+      Properties:
+          GroupDescription: Cluster security group
+          VpcId:
+            Fn::ImportValue: 
+              !Sub "${EnvironmentName}-MY-VPCID"
+     
+  Cluster:
+      Type: AWS::EKS::Cluster
+      Properties:
+          Name: !Sub '${EnvironmentName}-cluster'
+          Version: '1.17'
+          RoleArn: !GetAtt ClusterRole.Arn
+          ResourcesVpcConfig:
+              SecurityGroupIds:
+              -   !Ref ClusterSecurityGroup
+              SubnetIds:
+              - Fn::ImportValue: 
+                  !Sub '${EnvironmentName}-MY-PUB-SN-2'
+             
+              - Fn::ImportValue: 
+                  !Sub '${EnvironmentName}-MY-PUB-SN-3'      
+
+  NodeRole:
+      Type: "AWS::IAM::Role"
+      Properties:
+          AssumeRolePolicyDocument:
+              Version: "2012-10-17"
+              Statement:
+              -   Effect: Allow
+                  Principal:
+                      Service:
+                        - ec2.amazonaws.com
+                  Action:
+                        - "sts:AssumeRole"
+          ManagedPolicyArns:
+          -   "arn:aws:iam::aws:policy/AmazonEKSWorkerNodePolicy"
+          -   "arn:aws:iam::aws:policy/AmazonEKS_CNI_Policy"
+          -   "arn:aws:iam::aws:policy/AmazonEC2ContainerRegistryReadOnly"   
+
+  NodeGroup:
+      Type: 'AWS::EKS::Nodegroup'
+      DependsOn: Cluster
+      Properties:
+          ClusterName: !Sub '${EnvironmentName}-cluster'
+          NodeRole: !GetAtt NodeRole.Arn
+          InstanceTypes: 
+              - t2.small
+          RemoteAccess:
+              Ec2SshKey: jenkins-key
+
+          Subnets:
+            - Fn::ImportValue: 
+                !Sub '${EnvironmentName}-MY-PUB-SN-2'
+            
+            - Fn::ImportValue: 
+                !Sub '${EnvironmentName}-MY-PUB-SN-3'     
+                
+          ScalingConfig:
+              DesiredSize: 1
+              MinSize: 1
+              MaxSize: 1                              
