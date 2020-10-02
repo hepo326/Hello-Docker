@@ -53,8 +53,10 @@ pipeline {
         steps {
             withAWS(region: region, credentials: awsCredential) {
                 sh '''
+		    aws s3 ls
                     aws eks --region ${region} update-kubeconfig --name  ${cluster}
                     kubectl config use-context arn:aws:eks:${region}:123607427500:cluster/${cluster}
+		    kubectl get svc
                     kubectl apply -f ./${DEPLOYMENT_TYPE}-deployment.yml
                     docker image rm ${registry}:${imageVersion}
 
